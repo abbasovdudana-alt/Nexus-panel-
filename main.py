@@ -1,5 +1,8 @@
-import telebot
+import asyncio
 from datetime import datetime, timedelta
+import telebot
+from pyrogram import Client
+from pyrogram.errors import SessionPasswordNeeded, PhoneCodeInvalid, PhoneCodeExpired
 
 TOKEN = "8985105386:AAF2M1A0vcy-Z_kqCs4smKMkYyLOx38YkNs"
 bot = telebot.TeleBot(TOKEN)
@@ -117,19 +120,98 @@ def process_setup(message):
             del user_data[chat_id]
             return
             
-        phone = text_input
-        user_data[chat_id]['phone'] = phone
+        user_data[chat_id]['phone'] = text_input
+        user_data[chat_id]['step'] = 'waiting_code'
         
-        # Bütün məlumatlar toplandıqdan sonra burda istifadəçinin məlumatlarını qeydiyyata alıb yönləndirə bilərik
-        bot.send_message(
-            chat_id, 
-            "✅ Məlumatlarınız uğurla qəbul edildi!\n\n"
-            "🚀 Panel vasitəsilə qurulum sorğunuz administratora göndərildi.\n\n"
-            f"📂 Plugin və yeniliklər kanalımıza qoşulun: {PLUGIN_CHANNEL_LINK}"
-            f"{VERSION_SIGNATURE}"
-        )
-        del user_data[chat_id]
+        bot.send_message(chat_id, f"🔄 Telegram-a qoşulma sorğusu göndərilir və kod gözlənilir...{VERSION_SIGNATURE}")
+        
+        # Pyrogram clientini yaradıb kodu göndəririk
+        try:
+            api_id = int(user_data[chat_id]['api_id'])
+            api_hash = user_data[chat_id]['api_hash']
+            phone = user_data[chat_id]['phone']
+            
+            app = Client(name=f"session_{chat_id}", api_id=api_id, api_hash=api_hash, in_memory=True)
+            user_data[chat_id]['app'] = app
+            
+            # Event loop vasitəsilə connect olub kod istəyirik
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            loop.run_until_complete(app.connect())
+            sent_code = loop.run_until_complete(app.send_code(phone))
+            user_data[chat_id]['phone_code_hash'] = sent_code.phone_code_hash
+            
+            bot.send_message(
+                chat_id,
+                "✅ Təsdiq kodu nömrənizə göndərildi!\n\n"
+                "Zəhmət olmasa Telegram-dan gələn kodu bura yazın (məsələn: 12345):"
+                f"{VERSION_SIGNATURE}"
+            )
+        except Exception as e:
+            bot.send_message(chat_id, f"❌ Xəta baş verdi: {e}{VERSION_SIGNATURE}")
+            del user_data[chat_id]
+
+    elif step == 'waiting_code':
+        code = text_input
+        app = user_data[chat_id]['app']
+        phone = user_data[chat_id]['phone']
+        phone_code_hash = user_data[chat_id]['phone_code_hash']
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            loop.run_until_complete(app.sign_in(phone, phone_code_hash, code))
+            # Əgər şifrə tələb olunmursa, birbaşa burdan session string alırıq
+            session_string = loop.run_until_complete(app.export_session_string())
+            loop.run_until_complete(app.disconnect())
+            
+            bot.send_message(
+                chat_id,
+                "🎉 Uğurlu giriş!\n\n"
+                "Sənin **Session String** açarın aşağıdadır. Bunu kopyalayıb Termux-dakı botuna qura bilərsən:\n\n"
+                f"`{session_string}`"
+                f"{VERSION_SIGNATURE}"
+            )
+            del user_data[chat_id]
+            
+        except SessionPasswordNeeded:
+            user_data[chat_id]['step'] = 'waiting_password'
+            bot.send_message(
+                chat_id,
+                "🔒 Hesabınızda İki Addımlı Doğrulama (2FA) şifrəsi mövcuddur.\n\n"
+                "Zəhmət olmasa hesabınızın şifrəsini daxil edin:"
+                f"{VERSION_SIGNATURE}"
+            )
+        except Exception as e:
+            bot.send_message(chat_id, f"❌ Kod səhvdir və ya xəta baş verdi: {e}{VERSION_SIGNATURE}")
+            del user_data[chat_id]
+
+    elif step == 'waiting_password':
+        password = text_input
+        app = user_data[chat_id]['app']
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            loop.run_until_complete(app.check_password(password))
+            session_string = loop.run_until_complete(app.export_session_string())
+            loop.run_until_complete(app.disconnect())
+            
+            bot.send_message(
+                chat_id,
+                "🎉 2FA təsdiqi uğurla keçdi!\n\n"
+                "Sənin **Session String** açarın aşağıdadır:\n\n"
+                f"`{session_string}`"
+                f"{VERSION_SIGNATURE}"
+            )
+            del user_data[chat_id]
+            
+        except Exception as e:
+            bot.send_message(chat_id, f"❌ Şifrə səhvdir və ya xəta baş verdi: {e}{VERSION_SIGNATURE}")
+            del user_data[chat_id]
 
 print("Nexus İdarəetmə Paneli işə düşdü...")
 bot.infinity_polling()
-          
