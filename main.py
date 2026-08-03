@@ -1,7 +1,6 @@
 import asyncio
 asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
-import asyncio
 from datetime import datetime, timedelta
 import telebot
 from pyrogram import Client
