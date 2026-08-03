@@ -6,7 +6,6 @@ import telebot
 from pyrogram import Client
 from pyrogram.errors import SessionPasswordNeeded, PhoneCodeInvalid, PhoneCodeExpired
 
-
 try:
     asyncio.get_event_loop()
 except RuntimeError:
@@ -220,4 +219,3 @@ def process_setup(message):
 
 print("Nexus İdarəetmə Paneli işə düşdü...")
 bot.infinity_polling()
-
