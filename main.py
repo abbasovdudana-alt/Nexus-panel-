@@ -17,6 +17,15 @@ ACTIVE_LICENSES = {
     "NEXUS-ONE-DAY-999": 1
 }
 
+def run_async(coro):
+    """Asinxron funksiyaları sinxron mühitdə işlətmək üçün köməkçi funksiya."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_name = message.from_user.first_name
@@ -125,7 +134,6 @@ def process_setup(message):
         
         bot.send_message(chat_id, f"🔄 Telegram-a qoşulma sorğusu göndərilir və kod gözlənilir...{VERSION_SIGNATURE}")
         
-        # Pyrogram clientini yaradıb kodu göndəririk
         try:
             api_id = int(user_data[chat_id]['api_id'])
             api_hash = user_data[chat_id]['api_hash']
@@ -134,12 +142,8 @@ def process_setup(message):
             app = Client(name=f"session_{chat_id}", api_id=api_id, api_hash=api_hash, in_memory=True)
             user_data[chat_id]['app'] = app
             
-            # Event loop vasitəsilə connect olub kod istəyirik
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            loop.run_until_complete(app.connect())
-            sent_code = loop.run_until_complete(app.send_code(phone))
+            run_async(app.connect())
+            sent_code = run_async(app.send_code(phone))
             user_data[chat_id]['phone_code_hash'] = sent_code.phone_code_hash
             
             bot.send_message(
@@ -158,14 +162,10 @@ def process_setup(message):
         phone = user_data[chat_id]['phone']
         phone_code_hash = user_data[chat_id]['phone_code_hash']
         
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         try:
-            loop.run_until_complete(app.sign_in(phone, phone_code_hash, code))
-            # Əgər şifrə tələb olunmursa, birbaşa burdan session string alırıq
-            session_string = loop.run_until_complete(app.export_session_string())
-            loop.run_until_complete(app.disconnect())
+            run_async(app.sign_in(phone, phone_code_hash, code))
+            session_string = run_async(app.export_session_string())
+            run_async(app.disconnect())
             
             bot.send_message(
                 chat_id,
@@ -192,13 +192,10 @@ def process_setup(message):
         password = text_input
         app = user_data[chat_id]['app']
         
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         try:
-            loop.run_until_complete(app.check_password(password))
-            session_string = loop.run_until_complete(app.export_session_string())
-            loop.run_until_complete(app.disconnect())
+            run_async(app.check_password(password))
+            session_string = run_async(app.export_session_string())
+            run_async(app.disconnect())
             
             bot.send_message(
                 chat_id,
