@@ -1,0 +1,135 @@
+import telebot
+from datetime import datetime, timedelta
+
+TOKEN = "8985105386:AAF2M1A0vcy-Z_kqCs4smKMkYyLOx38YkNs"
+bot = telebot.TeleBot(TOKEN)
+
+user_data = {}
+VERSION_SIGNATURE = "\n\n━━━━━━━━━━━━━━━━━━\n⚙️ Versiya: v1"
+PLUGIN_CHANNEL_LINK = "https://t.me/nexususerbotplugin"
+
+ACTIVE_LICENSES = {
+    "NEXUS-PRO-1MONTH-777": 30,
+    "TEST-KEY-1": 1,
+    "NEXUS-ONE-DAY-999": 1
+}
+
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    user_name = message.from_user.first_name
+    text = (
+        f"Salam, {user_name}! Xoş gəlmisiniz. 🚀\n\n"
+        "Bu professional sistem vasitəsilə öz Telegram userbotunuzu tam avtomatik və təhlükəsiz şəkildə quraşdıra bilərsiniz.\n\n"
+        "✨ Üstünlüklərimiz:\n"
+        "• Sürətli və etibarlı qoşulma\n"
+        "• Peşəkar idarəetmə interfeysi\n"
+        "• 7/7 avtomatlaşdırılmış dəstək\n\n"
+        "Başlamaq üçün aşağıdakı əmri seçin:\n"
+        "👉 /setup - Qurulumu Başlat"
+        f"{VERSION_SIGNATURE}"
+    )
+    bot.send_message(message.chat.id, text)
+
+@bot.message_handler(commands=['setup'])
+def start_setup(message):
+    chat_id = message.chat.id
+    user_data[chat_id] = {'step': 'waiting_license'}
+    
+    text = (
+        "🔐 Lisenziya Təsdiqi\n\n"
+        "Botdan istifadə etmək üçün admin @Samirdideee -dən əldə etdiyiniz lisenziya kodunu daxil edin:"
+        f"{VERSION_SIGNATURE}"
+    )
+    bot.send_message(chat_id, text)
+
+@bot.message_handler(func=lambda message: message.chat.id in user_data)
+def process_setup(message):
+    chat_id = message.chat.id
+    step = user_data[chat_id].get('step')
+    text_input = message.text.strip()
+    
+    if step == 'waiting_license':
+        if text_input in ACTIVE_LICENSES:
+            days = ACTIVE_LICENSES[text_input]
+            now = datetime.now()
+            expire_date = now + timedelta(days=days)
+            
+            start_str = now.strftime("%d.%m.%Y - %H:%M")
+            expire_str = expire_date.strftime("%d.%m.%Y - %H:%M")
+            
+            del ACTIVE_LICENSES[text_input]
+            
+            user_data[chat_id]['license'] = text_input
+            user_data[chat_id]['expire_date'] = expire_date
+            user_data[chat_id]['step'] = 'waiting_api_id'
+            
+            bot.send_message(
+                chat_id,
+                "✅ Lisenziya uğurla təsdiqləndi və aktivləşdirildi!\n\n"
+                f"🕒 Aktivləşmə saatı: {start_str}\n"
+                f"📅 Bitmə saatı: {expire_str} ({days} günlük)\n\n"
+                "⚙️ Userbot Qurulum Paneli\n\n"
+                "1️⃣ Zəhmət olmasa, my.telegram.org saytından əldə etdiyiniz API_ID rəqəmini daxil edin:\n"
+                "(Məsələn: 36376916)"
+                f"{VERSION_SIGNATURE}"
+            )
+        else:
+            bot.send_message(
+                chat_id,
+                "❌ Yanlış, artıq istifadə olunmuş və ya vaxtı bitmiş lisenziya kodu!\n\n"
+                "Zəhmət olmasa admin @Samirdideee ilə əlaqə saxlayıb yeni kod əldə edin."
+                f"{VERSION_SIGNATURE}"
+            )
+            
+    elif step == 'waiting_api_id':
+        if datetime.now() > user_data[chat_id]['expire_date']:
+            bot.send_message(chat_id, f"❌ Təəssüf ki, lisenziya vaxtınız bitmişdir!{VERSION_SIGNATURE}")
+            del user_data[chat_id]
+            return
+            
+        user_data[chat_id]['api_id'] = text_input
+        user_data[chat_id]['step'] = 'waiting_api_hash'
+        bot.send_message(
+            chat_id, 
+            "✅ API_ID uğurla qəbul edildi!\n\n"
+            "2️⃣ İndi isə həmin paneldən əldə etdiyiniz API_HASH kodunu göndərin:"
+            f"{VERSION_SIGNATURE}"
+        )
+        
+    elif step == 'waiting_api_hash':
+        if datetime.now() > user_data[chat_id]['expire_date']:
+            bot.send_message(chat_id, f"❌ Təəssüf ki, lisenziya vaxtınız bitmişdir!{VERSION_SIGNATURE}")
+            del user_data[chat_id]
+            return
+            
+        user_data[chat_id]['api_hash'] = text_input
+        user_data[chat_id]['step'] = 'waiting_phone'
+        bot.send_message(
+            chat_id, 
+            "✅ API_HASH uğurla qəbul edildi!\n\n"
+            "3️⃣ İndi isə userbotu qoşmaq istədiyiniz telefon nömrəsini beynəlxalq formatda daxil edin (məsələn: +994501234567):"
+            f"{VERSION_SIGNATURE}"
+        )
+        
+    elif step == 'waiting_phone':
+        if datetime.now() > user_data[chat_id]['expire_date']:
+            bot.send_message(chat_id, f"❌ Təəssüf ki, lisenziya vaxtınız bitmişdir!{VERSION_SIGNATURE}")
+            del user_data[chat_id]
+            return
+            
+        phone = text_input
+        user_data[chat_id]['phone'] = phone
+        
+        # Bütün məlumatlar toplandıqdan sonra burda istifadəçinin məlumatlarını qeydiyyata alıb yönləndirə bilərik
+        bot.send_message(
+            chat_id, 
+            "✅ Məlumatlarınız uğurla qəbul edildi!\n\n"
+            "🚀 Panel vasitəsilə qurulum sorğunuz administratora göndərildi.\n\n"
+            f"📂 Plugin və yeniliklər kanalımıza qoşulun: {PLUGIN_CHANNEL_LINK}"
+            f"{VERSION_SIGNATURE}"
+        )
+        del user_data[chat_id]
+
+print("Nexus İdarəetmə Paneli işə düşdü...")
+bot.infinity_polling()
+          
