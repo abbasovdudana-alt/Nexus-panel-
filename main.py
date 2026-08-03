@@ -1,14 +1,9 @@
+import telebot
 import asyncio
 from datetime import datetime, timedelta
-import telebot
 from pyrogram import Client
-from pyrogram.errors import SessionPasswordNeeded, PhoneCodeInvalid, PhoneCodeExpired
+from pyrogram.errors import SessionPasswordNeeded
 
-try:
-    asyncio.get_event_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
-    
 TOKEN = "8985105386:AAF2M1A0vcy-Z_kqCs4smKMkYyLOx38YkNs"
 bot = telebot.TeleBot(TOKEN)
 
@@ -22,21 +17,12 @@ ACTIVE_LICENSES = {
     "NEXUS-ONE-DAY-999": 1
 }
 
-def run_async(coro):
-    """Asinxron funksiyaları sinxron mühitdə işlətmək üçün köməkçi funksiya."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_name = message.from_user.first_name
     text = (
         f"Salam, {user_name}! Xoş gəlmisiniz. 🚀\n\n"
-        "Bu professional sistem vasitəsilə öz Telegram userbotunuzu tam avtomatik və təhlükəsiz şəkildə quraşdıra bilərsiniz.\n\n"
+        "Bu professional sistem vasitəsilə öz Telegram userbotunuz üçün təhlükəsiz Session String əldə edə bilərsiniz.\n\n"
         "✨ Üstünlüklərimiz:\n"
         "• Sürətli və etibarlı qoşulma\n"
         "• Peşəkar idarəetmə interfeysi\n"
@@ -104,7 +90,7 @@ def process_setup(message):
             del user_data[chat_id]
             return
             
-        user_data[chat_id]['api_id'] = text_input
+        user_data[chat_id]['api_id'] = int(text_input)
         user_data[chat_id]['step'] = 'waiting_api_hash'
         bot.send_message(
             chat_id, 
@@ -134,86 +120,148 @@ def process_setup(message):
             del user_data[chat_id]
             return
             
-        user_data[chat_id]['phone'] = text_input
-        user_data[chat_id]['step'] = 'waiting_code'
+        phone = text_input
+        user_data[chat_id]['phone'] = phone
         
-        bot.send_message(chat_id, f"🔄 Telegram-a qoşulma sorğusu göndərilir və kod gözlənilir...{VERSION_SIGNATURE}")
+        bot.send_message(
+            chat_id, 
+            "⏳ Nömrəyə Telegram-dan təsdiq kodu göndərilir, zəhmət olmasa gözləyin..."
+            f"{VERSION_SIGNATURE}"
+        )
         
         try:
-            api_id = int(user_data[chat_id]['api_id'])
+            api_id = user_data[chat_id]['api_id']
             api_hash = user_data[chat_id]['api_hash']
+            session_name = f"session_{chat_id}"
+            
+            async def send_code_async():
+                client = Client(session_name, api_id=api_id, api_hash=api_hash, in_memory=True)
+                await client.connect()
+                sent_code = await client.send_code(phone)
+                return client, sent_code.phone_code_hash
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            client, phone_code_hash = loop.run_until_complete(send_code_async())
+            
+            user_data[chat_id]['client'] = client
+            user_data[chat_id]['loop'] = loop
+            user_data[chat_id]['phone_code_hash'] = phone_code_hash
+            user_data[chat_id]['step'] = 'waiting_otp'
+            
+            bot.send_message(
+                chat_id, 
+                "📲 Telegram hesabınıza kod göndərildi!\n\n"
+                "Zəhmət olmasa gələn təsdiq kodunu (OTP) rəqəmlər arasında boşluq buraxaraq daxil edin (məsələn: 1 2 3 4 5):"
+                f"{VERSION_SIGNATURE}"
+            )
+        except Exception as e:
+            bot.send_message(
+                chat_id, 
+                f"❌ Xəta baş verdi:\n{str(e)}\n\n"
+                "Zəhmət olmasa nömrəni düzgün daxil etdiyinizə əmin olun."
+                f"{VERSION_SIGNATURE}"
+            )
+            del user_data[chat_id]
+        
+    elif step == 'waiting_otp':
+        otp_code = text_input.replace(" ", "")
+        
+        try:
+            client = user_data[chat_id]['client']
+            loop = user_data[chat_id]['loop']
+            phone_code_hash = user_data[chat_id]['phone_code_hash']
             phone = user_data[chat_id]['phone']
             
-            app = Client(name=f"session_{chat_id}", api_id=api_id, api_hash=api_hash, in_memory=True)
-            user_data[chat_id]['app'] = app
-            
-            run_async(app.connect())
-            sent_code = run_async(app.send_code(phone))
-            user_data[chat_id]['phone_code_hash'] = sent_code.phone_code_hash
-            
-            bot.send_message(
-                chat_id,
-                "✅ Təsdiq kodu nömrənizə göndərildi!\n\n"
-                "Zəhmət olmasa Telegram-dan gələn kodu bura yazın (məsələn: 12345):"
-                f"{VERSION_SIGNATURE}"
-            )
-        except Exception as e:
-            bot.send_message(chat_id, f"❌ Xəta baş verdi: {e}{VERSION_SIGNATURE}")
-            del user_data[chat_id]
+            async def sign_in_async():
+                try:
+                    await client.sign_in(phone_number=phone, phone_code_hash=phone_code_hash, phone_code=otp_code)
+                    return "success"
+                except SessionPasswordNeeded:
+                    return "password_needed"
 
-    elif step == 'waiting_code':
-        code = text_input
-        app = user_data[chat_id]['app']
-        phone = user_data[chat_id]['phone']
-        phone_code_hash = user_data[chat_id]['phone_code_hash']
-        
-        try:
-            run_async(app.sign_in(phone, phone_code_hash, code))
-            session_string = run_async(app.export_session_string())
-            run_async(app.disconnect())
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(sign_in_async())
             
-            bot.send_message(
-                chat_id,
-                "🎉 Uğurlu giriş!\n\n"
-                "Sənin **Session String** açarın aşağıdadır. Bunu kopyalayıb Termux-dakı botuna qura bilərsən:\n\n"
-                f"`{session_string}`"
-                f"{VERSION_SIGNATURE}"
-            )
-            del user_data[chat_id]
-            
-        except SessionPasswordNeeded:
-            user_data[chat_id]['step'] = 'waiting_password'
-            bot.send_message(
-                chat_id,
-                "🔒 Hesabınızda İki Addımlı Doğrulama (2FA) şifrəsi mövcuddur.\n\n"
-                "Zəhmət olmasa hesabınızın şifrəsini daxil edin:"
-                f"{VERSION_SIGNATURE}"
-            )
+            if result == "success":
+                async def export_session():
+                    return await client.export_session_string()
+                
+                session_string = loop.run_until_complete(export_session())
+                try:
+                    loop.run_until_complete(client.disconnect())
+                except:
+                    pass
+
+                bot.send_message(
+                    chat_id, 
+                    "✅ Təsdiq kodu uğurla təsdiqləndi!\n\n"
+                    "🎉 **Sənin Session String açarın hazırdır!**\n\n"
+                    f"`{session_string}`\n\n"
+                    "📌 **Termux-da nə etməlisən?**\n"
+                    "1. Termux-u aç və userbot qovluğuna daxil ol.\n"
+                    "2. Quraşdırma zamanı və ya `.env` / `config.py` faylında bu açarı tələb edən yerə yapışdır.\n"
+                    "3. Botunu işə sal və istənilən çata `.alive` yazaraq yoxla!\n\n"
+                    f"📂 Plugin və yeniliklər kanalımız: {PLUGIN_CHANNEL_LINK}"
+                    f"{VERSION_SIGNATURE}"
+                )
+                del user_data[chat_id]
+            elif result == "password_needed":
+                user_data[chat_id]['step'] = 'waiting_password'
+                bot.send_message(
+                    chat_id,
+                    "🔐 Hesabınızda İki Mərhələli Təsdiq (Bulud Şifrəsi) aktivdir.\n\n"
+                    "Zəhmət olmasa hesabınızın şifrəsini daxil edin:"
+                    f"{VERSION_SIGNATURE}"
+                )
         except Exception as e:
-            bot.send_message(chat_id, f"❌ Kod səhvdir və ya xəta baş verdi: {e}{VERSION_SIGNATURE}")
+            bot.send_message(
+                chat_id, 
+                f"❌ Kod səhvdir və ya xəta baş verdi:\n{str(e)}"
+                f"{VERSION_SIGNATURE}"
+            )
             del user_data[chat_id]
 
     elif step == 'waiting_password':
         password = text_input
-        app = user_data[chat_id]['app']
         
         try:
-            run_async(app.check_password(password))
-            session_string = run_async(app.export_session_string())
-            run_async(app.disconnect())
+            client = user_data[chat_id]['client']
+            loop = user_data[chat_id]['loop']
+            
+            async def check_password_async():
+                if not client.is_connected:
+                    await client.connect()
+                await client.check_password(password)
+                return await client.export_session_string()
+
+            asyncio.set_event_loop(loop)
+            session_string = loop.run_until_complete(check_password_async())
+            try:
+                loop.run_until_complete(client.disconnect())
+            except:
+                pass
             
             bot.send_message(
-                chat_id,
-                "🎉 2FA təsdiqi uğurla keçdi!\n\n"
-                "Sənin **Session String** açarın aşağıdadır:\n\n"
-                f"`{session_string}`"
+                chat_id, 
+                "✅ Şifrə uğurla təsdiqləndi!\n\n"
+                "🎉 **Sənin Session String açarın hazırdır!**\n\n"
+                f"`{session_string}`\n\n"
+                "📌 **Termux-da nə etməlisən?**\n"
+                "1. Termux-u aç və userbot qovluğuna daxil ol.\n"
+                "2. Kodu kopyalayıb Termux-dakı tələb olunan yerə yapışdır.\n"
+                "3. Userbotunu işə sal!\n\n"
+                f"📂 Plugin və yeniliklər kanalımız: {PLUGIN_CHANNEL_LINK}"
                 f"{VERSION_SIGNATURE}"
             )
-            del user_data[chat_id]
-            
         except Exception as e:
-            bot.send_message(chat_id, f"❌ Şifrə səhvdir və ya xəta baş verdi: {e}{VERSION_SIGNATURE}")
-            del user_data[chat_id]
+            bot.send_message(
+                chat_id, 
+                f"❌ Şifrə səhvdir və ya xəta baş verdi:\n{str(e)}"
+                f"{VERSION_SIGNATURE}"
+            )
+            
+        del user_data[chat_id]
 
-print("Nexus İdarəetmə Paneli işə düşdü...")
+print("Nexus Session Generator Paneli işə düşdü...")
 bot.infinity_polling()
