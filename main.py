@@ -1,6 +1,4 @@
 import asyncio
-asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-
 from datetime import datetime, timedelta
 import telebot
 from pyrogram import Client
@@ -219,3 +217,4 @@ def process_setup(message):
 
 print("Nexus İdarəetmə Paneli işə düşdü...")
 bot.infinity_polling()
+                     
