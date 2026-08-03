@@ -1,4 +1,4 @@
 pyTelegramBotAPI
-Pyrogram
-TgCrypto
-Telebot
+pyrogram
+tgcrypto
+flask
