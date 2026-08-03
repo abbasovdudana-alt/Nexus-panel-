@@ -3,9 +3,23 @@ import asyncio
 from datetime import datetime, timedelta
 from pyrogram import Client
 from pyrogram.errors import SessionPasswordNeeded
+from flask import Flask
+from threading import Thread
+import os
 
 TOKEN = "8985105386:AAF2M1A0vcy-Z_kqCs4smKMkYyLOx38YkNs"
 bot = telebot.TeleBot(TOKEN)
+
+# Render-in port gözləntisini qarşılamaq üçün mini Flask serveri
+app_web = Flask('')
+
+@app_web.route('/')
+def home():
+    return "Nexus Panel is Alive!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app_web.run(host='0.0.0.0', port=port)
 
 user_data = {}
 VERSION_SIGNATURE = "\n\n━━━━━━━━━━━━━━━━━━\n⚙️ Versiya: v1"
@@ -263,5 +277,10 @@ def process_setup(message):
             
         del user_data[chat_id]
 
-print("Nexus Session Generator Paneli işə düşdü...")
-bot.infinity_polling()
+if __name__ == "__main__":
+    # Flask-ı arxa planda işə salırıq ki, Render port tələbini ödəsin
+    t = Thread(target=run_web)
+    t.start()
+    
+    print("Nexus Session Generator Paneli işə düşdü...")
+    bot.infinity_polling()
