@@ -217,4 +217,3 @@ def process_setup(message):
 
 print("Nexus İdarəetmə Paneli işə düşdü...")
 bot.infinity_polling()
-                     
