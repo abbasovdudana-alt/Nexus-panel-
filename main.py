@@ -4,6 +4,12 @@ import telebot
 from pyrogram import Client
 from pyrogram.errors import SessionPasswordNeeded, PhoneCodeInvalid, PhoneCodeExpired
 
+
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    
 TOKEN = "8985105386:AAF2M1A0vcy-Z_kqCs4smKMkYyLOx38YkNs"
 bot = telebot.TeleBot(TOKEN)
 
