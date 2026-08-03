@@ -278,9 +278,17 @@ def process_setup(message):
         del user_data[chat_id]
 
 if __name__ == "__main__":
-    # Flask-ı arxa planda işə salırıq ki, Render port tələbini ödəsin
+    # Flask-ı arxa planda işə salırıq
     t = Thread(target=run_web)
     t.start()
     
+    # Event loop xətasını aradan qaldırmaq üçün:
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     print("Nexus Session Generator Paneli işə düşdü...")
     bot.infinity_polling()
+    
